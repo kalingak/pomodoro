@@ -68,7 +68,6 @@ const PomodoroTimer = () => {
           if (prevTime <= 1) {
             // Timer finished
             const wasWorkSession = isWorkSession;
-            setIsActive(false);
             
             if (wasWorkSession) {
               // Work session ended, start break
@@ -94,6 +93,9 @@ const PomodoroTimer = () => {
             // Switch positions for next session
             setCurrentPosition(nextPosition);
             setNextPosition(currentPosition);
+            
+            // Keep timer active for automatic continuation
+            // Timer will continue running automatically
             
             return wasWorkSession ? breakTime : workTime;
           }
