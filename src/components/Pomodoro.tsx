@@ -29,7 +29,7 @@ const PomodoroTimer = () => {
     const [notificationPermission, setNotificationPermission] =
         useState("default");
 
-    const timerRef = useRef(null);
+    const timerRef = useRef<number | null>(null);
 
     // Request notification permission on mount
     useEffect(() => {
@@ -46,7 +46,7 @@ const PomodoroTimer = () => {
 
     // Send notification
     const sendNotification = useCallback(
-        (title, body, icon = "⏰") => {
+        (title: string, body: any, icon = "⏰") => {
             if (notificationPermission === "granted") {
                 new Notification(title, {
                     body: body,
@@ -68,7 +68,7 @@ const PomodoroTimer = () => {
     }, [currentPosition]);
 
     // Format time display
-    const formatTime = (seconds) => {
+    const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
         return `${mins.toString().padStart(2, "0")}:${secs
@@ -123,10 +123,16 @@ const PomodoroTimer = () => {
                 });
             }, 1000);
         } else {
-            clearInterval(timerRef.current);
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+            }
         }
 
-        return () => clearInterval(timerRef.current);
+        return () => {
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+            }
+        };
     }, [
         isActive,
         currentTime,
@@ -154,7 +160,7 @@ const PomodoroTimer = () => {
     };
 
     // Settings handlers
-    const updateWorkTime = (minutes) => {
+    const updateWorkTime = (minutes: number) => {
         const seconds = minutes * 60;
         setWorkTime(seconds);
         if (isWorkSession && !isActive) {
@@ -162,7 +168,7 @@ const PomodoroTimer = () => {
         }
     };
 
-    const updateBreakTime = (minutes) => {
+    const updateBreakTime = (minutes: number) => {
         const seconds = minutes * 60;
         setBreakTime(seconds);
         if (!isWorkSession && !isActive) {
@@ -170,7 +176,7 @@ const PomodoroTimer = () => {
         }
     };
 
-    const setInitialPosition = (position) => {
+    const setInitialPosition = (position: React.SetStateAction<string>) => {
         setStartingPosition(position);
         setCurrentPosition(position);
         setNextPosition(position === "sitting" ? "standing" : "sitting");
