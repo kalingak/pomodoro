@@ -18,6 +18,10 @@ const PomodoroTimer = () => {
     const [isActive, setIsActive] = useState(false);
     const [isWorkSession, setIsWorkSession] = useState(true);
     const [cycleCount, setCycleCount] = useState(0);
+    const [startTime, setStartTime] = useState<number | null>(null);
+    const [sessionStartTime, setSessionStartTime] = useState<number | null>(
+        null
+    );
 
     // Position state
     const [currentPosition, setCurrentPosition] = useState("sitting"); // 'sitting' or 'standing'
@@ -46,7 +50,7 @@ const PomodoroTimer = () => {
 
     // Send notification
     const sendNotification = useCallback(
-        (title: string, body: any, icon = "⏰") => {
+        (title, body, icon = "⏰") => {
             if (notificationPermission === "granted") {
                 new Notification(title, {
                     body: body,
@@ -68,7 +72,7 @@ const PomodoroTimer = () => {
     }, [currentPosition]);
 
     // Format time display
-    const formatTime = (seconds: number) => {
+    const formatTime = (seconds) => {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
         return `${mins.toString().padStart(2, "0")}:${secs
@@ -76,52 +80,66 @@ const PomodoroTimer = () => {
             .padStart(2, "0")}`;
     };
 
-    // Timer logic
+    // Timer logic with background tab handling
     useEffect(() => {
-        if (isActive && currentTime > 0) {
+        if (isActive) {
+            const now = Date.now();
+
+            // Set start time when timer becomes active
+            if (!startTime) {
+                setStartTime(now);
+                setSessionStartTime(now);
+            }
+
             timerRef.current = setInterval(() => {
-                setCurrentTime((prevTime) => {
-                    if (prevTime <= 1) {
-                        // Timer finished
-                        const wasWorkSession = isWorkSession;
+                const currentNow = Date.now();
+                const totalSessionTime = isWorkSession ? workTime : breakTime;
+                const elapsedTime = Math.floor(
+                    (currentNow - (sessionStartTime || now)) / 1000
+                );
+                const remainingTime = Math.max(
+                    0,
+                    totalSessionTime - elapsedTime
+                );
 
-                        if (wasWorkSession) {
-                            // Work session ended, start break
-                            setIsWorkSession(false);
-                            setCurrentTime(breakTime);
-                            setCycleCount((prev) => prev + 1);
-                            sendNotification(
-                                "🎉 Work Session Complete!",
-                                `Time for a ${
-                                    breakTime / 60
-                                } minute break. Switch to ${nextPosition}!`,
-                                "☕"
-                            );
-                        } else {
-                            // Break ended, start work
-                            setIsWorkSession(true);
-                            setCurrentTime(workTime);
-                            sendNotification(
-                                "💪 Break Over!",
-                                `Time to work for ${
-                                    workTime / 60
-                                } minutes. Switch to ${nextPosition}!`,
-                                "⚡"
-                            );
-                        }
+                setCurrentTime(remainingTime);
 
-                        // Switch positions for next session
-                        setCurrentPosition(nextPosition);
-                        setNextPosition(currentPosition);
+                if (remainingTime <= 0) {
+                    // Timer finished
+                    const wasWorkSession = isWorkSession;
 
-                        // Keep timer active for automatic continuation
-                        // Timer will continue running automatically
-
-                        return wasWorkSession ? breakTime : workTime;
+                    if (wasWorkSession) {
+                        // Work session ended, start break
+                        setIsWorkSession(false);
+                        setCurrentTime(breakTime);
+                        setCycleCount((prev) => prev + 1);
+                        setSessionStartTime(currentNow);
+                        sendNotification(
+                            "🎉 Work Session Complete!",
+                            `Time for a ${
+                                breakTime / 60
+                            } minute break. Switch to ${nextPosition}!`,
+                            "☕"
+                        );
+                    } else {
+                        // Break ended, start work
+                        setIsWorkSession(true);
+                        setCurrentTime(workTime);
+                        setSessionStartTime(currentNow);
+                        sendNotification(
+                            "💪 Break Over!",
+                            `Time to work for ${
+                                workTime / 60
+                            } minutes. Switch to ${nextPosition}!`,
+                            "⚡"
+                        );
                     }
-                    return prevTime - 1;
-                });
-            }, 1000);
+
+                    // Switch positions for next session
+                    setCurrentPosition(nextPosition);
+                    setNextPosition(currentPosition);
+                }
+            }, 100); // Check every 100ms for better accuracy
         } else {
             if (timerRef.current) {
                 clearInterval(timerRef.current);
@@ -135,18 +153,98 @@ const PomodoroTimer = () => {
         };
     }, [
         isActive,
-        currentTime,
         isWorkSession,
         workTime,
         breakTime,
         currentPosition,
         nextPosition,
         sendNotification,
+        startTime,
+        sessionStartTime,
+    ]);
+
+    // Handle visibility change to sync timer when tab becomes active
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (!document.hidden && isActive && sessionStartTime) {
+                // Tab became visible, sync the timer
+                const now = Date.now();
+                const totalSessionTime = isWorkSession ? workTime : breakTime;
+                const elapsedTime = Math.floor((now - sessionStartTime) / 1000);
+                const remainingTime = Math.max(
+                    0,
+                    totalSessionTime - elapsedTime
+                );
+
+                setCurrentTime(remainingTime);
+
+                // Check if session should have ended while in background
+                if (remainingTime <= 0) {
+                    const wasWorkSession = isWorkSession;
+
+                    if (wasWorkSession) {
+                        setIsWorkSession(false);
+                        setCurrentTime(breakTime);
+                        setCycleCount((prev) => prev + 1);
+                        setSessionStartTime(now);
+                        sendNotification(
+                            "🎉 Work Session Complete!",
+                            `Time for a ${
+                                breakTime / 60
+                            } minute break. Switch to ${nextPosition}!`,
+                            "☕"
+                        );
+                    } else {
+                        setIsWorkSession(true);
+                        setCurrentTime(workTime);
+                        setSessionStartTime(now);
+                        sendNotification(
+                            "💪 Break Over!",
+                            `Time to work for ${
+                                workTime / 60
+                            } minutes. Switch to ${nextPosition}!`,
+                            "⚡"
+                        );
+                    }
+
+                    setCurrentPosition(nextPosition);
+                    setNextPosition(currentPosition);
+                }
+            }
+        };
+
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        return () => {
+            document.removeEventListener(
+                "visibilitychange",
+                handleVisibilityChange
+            );
+        };
+    }, [
+        isActive,
+        isWorkSession,
+        workTime,
+        breakTime,
+        sessionStartTime,
+        currentPosition,
+        nextPosition,
+        sendNotification,
     ]);
 
     // Control functions
-    const startTimer = () => setIsActive(true);
-    const pauseTimer = () => setIsActive(false);
+    const startTimer = () => {
+        setIsActive(true);
+        const now = Date.now();
+        setStartTime(now);
+        setSessionStartTime(now);
+    };
+
+    const pauseTimer = () => {
+        setIsActive(false);
+        setStartTime(null);
+        setSessionStartTime(null);
+    };
 
     const resetTimer = () => {
         setIsActive(false);
@@ -157,10 +255,12 @@ const PomodoroTimer = () => {
             startingPosition === "sitting" ? "standing" : "sitting"
         );
         setCycleCount(0);
+        setStartTime(null);
+        setSessionStartTime(null);
     };
 
     // Settings handlers
-    const updateWorkTime = (minutes: number) => {
+    const updateWorkTime = (minutes) => {
         const seconds = minutes * 60;
         setWorkTime(seconds);
         if (isWorkSession && !isActive) {
@@ -168,7 +268,7 @@ const PomodoroTimer = () => {
         }
     };
 
-    const updateBreakTime = (minutes: number) => {
+    const updateBreakTime = (minutes) => {
         const seconds = minutes * 60;
         setBreakTime(seconds);
         if (!isWorkSession && !isActive) {
@@ -176,7 +276,7 @@ const PomodoroTimer = () => {
         }
     };
 
-    const setInitialPosition = (position: React.SetStateAction<string>) => {
+    const setInitialPosition = (position) => {
         setStartingPosition(position);
         setCurrentPosition(position);
         setNextPosition(position === "sitting" ? "standing" : "sitting");
